@@ -1,0 +1,5 @@
+# for scrapper
+beautifulsoup4
+lxml
+html5lib
+requests
