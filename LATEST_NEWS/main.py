@@ -151,12 +151,3 @@ def get_articles(listing_url, count=4):
         return None
 
     return articles
-
-
-national_articles = get_articles('https://www.moneycontrol.com/news/india/', count=4)
-print("\n--- NATIONAL ARTICLES ---")
-print(national_articles)
-
-world_articles = get_articles('https://www.moneycontrol.com/world/', count=4)
-print("\n--- WORLD ARTICLES ---")
-print(world_articles)

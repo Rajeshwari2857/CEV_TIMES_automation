@@ -1,23 +1,7 @@
 from bs4 import BeautifulSoup
 import requests
 import re
-from flask import Flask, render_template
-
-app = Flask(__name__)
-
-gainers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-gainers-nse'
-losers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-losers-nse'
-
-@app.route('/')
-def home():
-    gainers = scraping_of_companies(gainers_url)
-    losers = scraping_of_companies(losers_url)
-
-    return render_template(
-        'dashboard.html',
-        gainers=gainers,
-        losers=losers
-    )
+from flask import Flask, render_template, url_for
 
 
 def scraping_of_companies(url):
@@ -74,5 +58,26 @@ def scraping_of_companies(url):
     return companies
 
 
-if __name__ == '__main__':
-    app.run(debug=True)
+def nifty_and_sensex(url):
+    indices = []
+    response = requests.get(url, timeout=15)
+    soup = BeautifulSoup(response.content, 'lxml')
+    items= soup.find_all('div', class_=re.compile(r'^IndicesTicker_web_flexItm'))
+    
+    for item in items:
+        name_tag = item.find('span')
+        value_tag = item.find('span', class_=re.compile(r'^IndicesTicker_web_hl'))
+        change_tag = item.find('span', class_=re.compile(r'^IndicesTicker_web_upDnVal'))
+        
+    if name_tag and value_tag and change_tag:
+        name = name_tag.get_text(strip=True)
+        value = value_tag.get_text(strip=True)
+        change = change_tag.get_text(strip=True)
+        
+    indices.append({
+        'name': name,
+        'value': value,
+        'change': change,
+    })
+
+    return indices
