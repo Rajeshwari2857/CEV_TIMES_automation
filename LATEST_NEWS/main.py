@@ -1,153 +1,259 @@
 from bs4 import BeautifulSoup
-import requests
-import time
-import random
-import json
+from dotenv import load_dotenv
+import requests, time, random, json
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-}
+HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}
+MAX_RETRIES = 2
+BACKOFF_SECONDS = 3
 
-MAX_RETRIES = 2          
-BACKOFF_SECONDS = 3       
-
+def call_with_retry(func, max_retries=2, backoff_seconds=5):
+    for attempt in range(1, max_retries + 2):
+        try:
+            return func()
+        except Exception as e:
+            print(f'Attempt {attempt}: Gemini call failed -> {e}')
+            if attempt <= max_retries:
+                wait_time = backoff_seconds * attempt
+                print(f'Waiting {wait_time} seconds before retrying...')
+                time.sleep(wait_time)
+    print('GIVING UP: Gemini call failed after all retries')
+    return None
 
 def fetch_with_retry(url):
-    """
-    Fetches a URL, retrying with a longer wait each time it fails.
-    Returns the response object if successful, or None if it never worked.
-    """
-    for attempt in range(1, MAX_RETRIES + 2): 
+    for attempt in range(1, MAX_RETRIES + 2):
         try:
             response = requests.get(url, headers=HEADERS, timeout=15)
             response.raise_for_status()
             return response
-
         except requests.exceptions.Timeout:
-            print(f"Attempt {attempt}: {url} took too long to respond")
-
+            print(f'Attempt {attempt}: {url} took too long to respond')
         except requests.exceptions.RequestException as e:
-            print(f"Attempt {attempt}: request failed for {url} -> {e}")
-
+            print(f'Attempt {attempt}: request failed for {url} -> {e}')
         if attempt <= MAX_RETRIES:
             wait_time = BACKOFF_SECONDS * attempt
-            print(f"Waiting {wait_time} seconds before retrying...")
+            print(f'Waiting {wait_time} seconds before retrying...')
             time.sleep(wait_time)
-
-    print(f"GIVING UP: {url} is unreachable after {MAX_RETRIES + 1} attempts")
+    print(f'GIVING UP: {url} is unreachable after {MAX_RETRIES + 1} attempts')
     return None
 
-
-def get_headline_list(listing_url, count=4):
-    """
-    Moneycontrol embeds a hidden JSON block (JSON-LD, meant for search engines)
-    on its news listing pages, containing every headline + article URL on the
-    page in order. This is far more reliable than hunting for the right <a>
-    tag in the visible HTML, since it rarely changes even if the page's visual
-    design does.
-
-    Returns a list of {"headline": ..., "url": ...} dicts, or None on failure.
-    """
+def get_headline_list(listing_url):
     listing_response = fetch_with_retry(listing_url)
     if listing_response is None:
         return None
 
     soup = BeautifulSoup(listing_response.content, 'lxml')
-
     script_tags = soup.find_all('script', type='application/ld+json')
-
     headline_list = None
+
     for tag in script_tags:
         try:
             data = json.loads(tag.string)
         except (json.JSONDecodeError, TypeError):
-            continue 
-
+            continue
         if isinstance(data, dict):
             candidates = [data]
         elif isinstance(data, list):
             candidates = data
         else:
             continue
-
         for candidate in candidates:
             if isinstance(candidate, dict) and candidate.get('@type') == 'ItemList':
                 headline_list = candidate.get('itemListElement', [])
                 break
-
         if headline_list:
             break
 
     if not headline_list:
-        print(f"No ItemList JSON-LD found on {listing_url} - page structure may have changed")
+        print(f'No ItemList JSON-LD found on {listing_url} - page structure may have changed')
         return None
 
     results = []
-    for item in headline_list[:count]:
+    for item in headline_list:
         headline = item.get('name', '').strip()
         url = item.get('url', '')
         if headline and url:
-            results.append({"headline": headline, "url": url})
+            results.append({'headline': headline, 'url': url})
 
     if not results:
-        print(f"ItemList was found but contained no usable entries on {listing_url}")
+        print(f'ItemList was found but contained no usable entries on {listing_url}')
         return None
-
     return results
 
+from google import genai
+from google.genai import types
 
-def get_articles(listing_url, count=4):
-    """
-    Gets the top `count` headlines + URLs from a Moneycontrol listing page
-    (via JSON-LD), then visits each article page to extract its date and
-    full body text.
+def select_headlines(business_headlines, world_headlines):
+    load_dotenv()
+    client = genai.Client()
+    instructions = """
+You will be given two JSON lists of news headlines, each item containing a
+"headline" and a "url". Follow these steps exactly.
 
-    Returns None if the listing page itself could not be reached or had
-    no usable headlines.
-    """
-    headline_entries = get_headline_list(listing_url, count=count)
-    if headline_entries is None:
-        return None 
+STEP 1 - For the BUSINESS list:
+- Remove any headline that is about a country or economy other than India
+  (for example, articles mainly about South Korea, the US, China, etc. with
+  no India angle).
+- From what remains, keep only headlines that are market-related: stock
+  moves, indices, IPOs, earnings, RBI/economic policy, M&A, company results.
+  Loosely related is acceptable.
+- Exclude any headline that is an analyst recommendation or brokerage
+  suggestion on a specific stock (for example, "Buy X; target of Rs Y:
+  [Brokerage name]", or any headline naming a broker's buy/sell/hold call
+  or price target). These are not genuine news events.
+- Select up to 4 headlines from this filtered set. If fewer than 4 genuinely
+  fit the criteria, select fewer rather than including a weak or unrelated
+  match - but always select at least 2 if at all possible. Preserve the
+  original "headline" and "url" fields exactly as given.
 
+STEP 2 - For the WORLD list:
+- Look at the headlines in order. Select the first 4 headlines such that no
+  two selected headlines cover the same underlying story or topic.
+  For example, "Multiple countries probing flydubai pilot..." and
+  "flydubai pilot admits he was ready to crash the plane..." are the SAME
+  topic (the flydubai incident) - only one of them should be selected, even
+  if it means skipping ahead further down the list to find a 4th unique topic.
+- Preserve the original "headline" and "url" fields exactly as given.
+
+Return a single JSON object with exactly two keys:
+"selected_national_headlines" (an array of the chosen business headline
+objects) and "selected_international_headlines" (an array of the 4 chosen
+world headline objects). Each object in both arrays must contain exactly
+"headline" and "url".
+"""
+
+    def do_call():
+        response = client.models.generate_content(model='gemini-3.8-flash', contents=[instructions, 'Here is the BUSINESS headlines JSON:', json.dumps(business_headlines), 'Here is the WORLD headlines JSON:', json.dumps(world_headlines)], config=types.GenerateContentConfig(response_mime_type='application/json'))
+        return json.loads(response.text)
+    return call_with_retry(do_call)
+
+business_headlines = get_headline_list('https://www.moneycontrol.com/news/business/')
+
+world_headlines = get_headline_list('https://www.moneycontrol.com/world/')
+
+ROUNDUP_HEADLINE_PATTERNS = [
+    'trade setup',
+    'top 10 things',
+    'top 15 things',
+    'things to know before',
+    'before the opening bell',
+    'stocks in news',
+]
+
+def get_two_national_headlines(selected_national_headlines):
+    def is_roundup(headline):
+        lowered = headline['headline'].lower()
+        return any(pattern in lowered for pattern in ROUNDUP_HEADLINE_PATTERNS)
+
+    usable = [h for h in selected_national_headlines if not is_roundup(h)]
+
+    if len(usable) < 2:
+        print('Fewer than 2 non-roundup national headlines available, falling back to include roundup-style ones')
+        usable = selected_national_headlines
+
+    return usable[:2]
+
+def fetch_selected_articles(headline_entries):
     articles = []
-
     for entry in headline_entries:
-        headline = entry["headline"]
-        link = entry["url"]
-
+        headline = entry['headline']
+        link = entry['url']
         time.sleep(random.uniform(2, 5))
-
         article_response = fetch_with_retry(link)
         if article_response is None:
-            print(f"Skipping article (could not fetch): {headline}")
-            continue  
-
+            print(f'Skipping article (could not fetch): {headline}')
+            continue
         article_soup = BeautifulSoup(article_response.content, 'lxml')
-
-        date_tag = article_soup.find('div', class_='article_schedule')
-        date = date_tag.get_text(strip=True) if date_tag else "Date not found"
-
         content_div = article_soup.find('div', class_='content_wrapper')
         if content_div:
             paragraphs = content_div.find_all('p')
-            body = " ".join(p.get_text(strip=True) for p in paragraphs)
+            body = ' '.join((p.get_text(strip=True) for p in paragraphs))
         else:
-            body = ""
-
+            body = ''
         if not body or len(body.strip()) < 200:
-            print(f"Skipping article (no usable content extracted): {headline}")
+            print(f'Skipping article (no usable content extracted): {headline}')
             continue
-
-        articles.append({
-            "headline": headline,
-            "date": date,
-            "url": link,
-            "body": body
-        })
-
-    if not articles:
-        print(f"No usable articles extracted from {listing_url}")
-        return None
-
+        articles.append({'headline': headline, 'body': body})
     return articles
+
+def summarize_bulletin(national_articles, international_articles):
+    load_dotenv()
+    client = genai.Client()
+    instructions = """
+You will be given two JSON lists: "national_articles" and
+"international_articles". Each item has a "headline" and a "body".
+
+For every article in both lists, write a summary of 50 to 100 words.
+
+Format the ENTIRE output as plain text (not JSON), structured exactly like
+this:
+
+National News
+
+[Headline 1]
+[50-100 word summary]
+
+[Headline 2]
+[50-100 word summary]
+
+(...continue for every national article actually provided - there may be
+anywhere from 2 to 4 of them, do not assume there are always 4)
+
+International News
+
+[Headline 1]
+[50-100 word summary]
+
+(...continue for every international article actually provided)
+
+Do not add any commentary, introduction, or conclusion outside this
+structure. Do not wrap the output in JSON or markdown code blocks.
+"""
+
+    def do_call():
+        response = client.models.generate_content(model='gemini-3.8-flash', contents=[instructions, 'Here are the national articles:', json.dumps(national_articles), 'Here are the international articles:', json.dumps(international_articles)])
+        return response.text
+
+    return call_with_retry(do_call, max_retries=4, backoff_seconds=10)
+
+if business_headlines and world_headlines:
+    selected = select_headlines(business_headlines, world_headlines)
+    print('\n--- GEMINI SELECTED HEADLINES ---')
+    print(selected)
+
+    if selected:
+        national_selected = selected.get('selected_national_headlines', [])
+        international_selected = selected.get('selected_international_headlines', [])
+
+        two_national_headlines = get_two_national_headlines(national_selected)
+        print('\n--- TWO NATIONAL HEADLINES (for frontend) ---')
+        print(two_national_headlines)
+
+        national_articles = fetch_selected_articles(national_selected)
+        international_articles = fetch_selected_articles(international_selected)
+        print(f'\nFetched {len(national_articles)} national article(s), {len(international_articles)} international article(s)')
+
+        with open('fetched_articles_backup.json', 'w') as f:
+            json.dump({'national_articles': national_articles, 'international_articles': international_articles}, f)
+
+        bulletin_text = summarize_bulletin(national_articles, international_articles)
+        if bulletin_text is None:
+            print('Summarization failed, but your fetched articles are saved in fetched_articles_backup.json')
+            print('You can retry just the summarization step without re-scraping.')
+        else:
+            print('\n--- FINAL BULLETIN ---')
+            print(bulletin_text)
+    else:
+        print('Skipping article fetch - Gemini selection step failed')
+else:
+    print('Skipping Gemini selection - one or both headline lists failed to scrape')
+
+def retry_summarization_from_backup():
+    with open('fetched_articles_backup.json', 'r') as f:
+        backup = json.load(f)
+    bulletin_text = summarize_bulletin(backup['national_articles'], backup['international_articles'])
+    if bulletin_text is None:
+        print('Summarization failed again.')
+    else:
+        print('\n--- FINAL BULLETIN ---')
+        print(bulletin_text)
+    return bulletin_text
