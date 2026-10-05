@@ -2,6 +2,25 @@ from bs4 import BeautifulSoup
 import requests
 import re
 from flask import Flask, render_template, url_for
+import csv
+from pathlib import Path
+
+views = Flask(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+FILES_DIR = BASE_DIR / "files"
+
+FILES_DIR.mkdir(exist_ok=True)
+
+gainers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-gainers-nse'
+losers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-losers-nse'
+
+@views.route('/')
+def home():
+    gainers = scraping_of_companies(gainers_url)
+    losers = scraping_of_companies(losers_url)
+  
+    return "CSV files updated"
 
 
 def scraping_of_companies(url):
@@ -81,3 +100,23 @@ def nifty_and_sensex(url):
     })
 
     return indices
+
+
+def save_to_csv(companies, filename):
+    with open(filename, 'w', newline='', encoding='utf-8') as file:
+        
+        writer = csv.DictWriter(
+            file,
+            fieldnames=[
+                'name', 
+                'price',
+                'change'
+            ] #these names will be extracted from companies dictionary, so 'name', 'price' and 'change' need to be exactly same 
+        )
+        
+        writer.writeheader()
+        writer.writerows(companies)
+        
+        
+if __name__ == '__main__':
+    views.run(debug=True)
