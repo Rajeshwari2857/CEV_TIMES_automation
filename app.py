@@ -1,6 +1,6 @@
-from flask import Flask, render_template, url_for
+from flask import Flask, render_template
 from POSTS import views
-from LATEST_NEWS import main
+from LATEST_NEWS import main 
 
 app = Flask(__name__)
 
@@ -14,7 +14,7 @@ def home():
     indices = views.nifty_and_sensex(gainers_url)
 
     return render_template(
-        url_for('templates/dashboard.html'),
+        ('templates/dashboard.html'),
         gainers=gainers,
         losers=losers,
         indices=indices,
@@ -27,7 +27,7 @@ def latest_news():
     world_articles = main.get_articles('https://www.moneycontrol.com/world/', count=4)
     
     return render_template(
-        url_for('templates/dashboard.html'),
+        ('templates/dashboard.html'),
         national_articles=national_articles,
         world_articles=world_articles
     )

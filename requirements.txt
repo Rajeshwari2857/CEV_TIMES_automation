@@ -10,3 +10,4 @@ urllib3==2.8.0
 flask
 Flask
 python-dotenv
+google-genai
