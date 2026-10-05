@@ -9,6 +9,23 @@ from google.genai import types
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}
 MAX_RETRIES = 2
 BACKOFF_SECONDS = 3
+OVERLOAD_WAIT_SECONDS = 5
+SELECTION_BACKUP_FILE = 'selected_headlines_backup.json'
+USE_SELECTION_BACKUP = False  
+model = 'gemini-3.1-flash-lite'
+
+def is_overloaded_error(e):
+    """True if the error looks like a 503 / high-demand response."""
+    if getattr(e, 'code', None) == 503:
+        return True
+    message = str(e).lower()
+    return any(term in message for term in ('503', 'unavailable', 'high demand', 'overloaded'))
+
+
+def is_daily_quota_error(e):
+    """True for a 429 that won't clear by waiting a few seconds."""
+    message = str(e)
+    return '429' in message and 'PerDay' in message
 
 
 def call_with_retry(func, max_retries=2, backoff_seconds=5):
@@ -18,10 +35,19 @@ def call_with_retry(func, max_retries=2, backoff_seconds=5):
         
         except Exception as e:
             print(f'Attempt {attempt}: Gemini call failed -> {e}')
+
+            if is_daily_quota_error(e):
+                print('Daily quota exhausted - retrying is pointless. Try again later or switch model.')
+                return None
             
             if attempt <= max_retries:
-                wait_time = backoff_seconds * attempt
-                print(f'Waiting {wait_time} seconds before retrying...')
+                if is_overloaded_error(e):
+                    # 5, 10, 20, 30, 30... plus up to 2s of jitter
+                    wait_time = min(OVERLOAD_WAIT_SECONDS * (2 ** (attempt - 1)), 30)
+                    wait_time += random.uniform(0, 2)
+                else:
+                    wait_time = backoff_seconds * attempt  # unchanged for other errors
+                print(f'Waiting {wait_time:.1f} seconds before retrying...')
                 time.sleep(wait_time)
                 
     print('GIVING UP: Gemini call failed after all retries')
@@ -73,6 +99,9 @@ def get_headline_list(listing_url):
             
         elif isinstance(data, list):
             candidates = data
+
+        else:
+            continue
         
         for candidate in candidates:
             if isinstance(candidate, dict) and candidate.get('@type') == 'ItemList':
@@ -142,7 +171,7 @@ world headline objects). Each object in both arrays must contain exactly
 
     def do_call():
         response = client.models.generate_content(
-            model='gemini-3.8-flash', 
+            model=model, 
             contents=[
                 instructions, 
                 'Here is the BUSINESS headlines JSON:', 
@@ -157,11 +186,20 @@ world headline objects). Each object in both arrays must contain exactly
         
         return json.loads(response.text)
     
-    return call_with_retry(do_call)
+    return call_with_retry(do_call, max_retries=8, backoff_seconds=10)
 
-business_headlines = get_headline_list('https://www.moneycontrol.com/news/business/')
+selected_from_backup = None
 
-world_headlines = get_headline_list('https://www.moneycontrol.com/world/')
+if USE_SELECTION_BACKUP and os.path.exists(SELECTION_BACKUP_FILE):
+    with open(SELECTION_BACKUP_FILE, 'r') as f:
+        selected_from_backup = json.load(f)
+    print(f'Loaded headline selection from {SELECTION_BACKUP_FILE} - skipping scrape and selection')
+    business_headlines = None
+    world_headlines = None
+
+else:
+    business_headlines = get_headline_list('https://www.moneycontrol.com/news/business/')
+    world_headlines = get_headline_list('https://www.moneycontrol.com/world/')
 
 ROUNDUP_HEADLINE_PATTERNS = [
     'trade setup',
@@ -256,7 +294,7 @@ structure. Do not wrap the output in JSON or markdown code blocks.
 
     def do_call():
         response = client.models.generate_content(
-            model='gemini-3.8-flash', contents=[
+            model=model, contents=[
                 instructions, 
                 'Here are the national articles:', 
                 json.dumps(national_articles), 
@@ -267,13 +305,25 @@ structure. Do not wrap the output in JSON or markdown code blocks.
         
         return response.text
 
-    return call_with_retry(do_call, max_retries=4, backoff_seconds=10)
+    return call_with_retry(do_call, max_retries=8, backoff_seconds=10)
 
-if business_headlines and world_headlines:
-    selected = select_headlines(business_headlines, world_headlines)
+if selected_from_backup or (business_headlines and world_headlines):
+    if selected_from_backup:
+        selected = selected_from_backup
+    else:
+        selected = select_headlines(business_headlines, world_headlines)
+        
+        if selected:
+            with open(SELECTION_BACKUP_FILE, 'w') as f:
+                json.dump(selected, f)
+            print(f'Headline selection saved to {SELECTION_BACKUP_FILE}')
     
     print('\n--- GEMINI SELECTED HEADLINES ---')
     print(selected)
+
+    if selected is None:
+        print('FATAL: Gemini headline selection failed after all retries.')
+        exit()
 
     if selected:
         national_selected = selected.get('selected_national_headlines', [])
