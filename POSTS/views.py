@@ -1,25 +1,25 @@
 from bs4 import BeautifulSoup
-import requests
-import re
+import re, os, requests, csv
 from flask import Flask, render_template, url_for
-import csv
 from pathlib import Path
 
 views = Flask(__name__)
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-FILES_DIR = BASE_DIR / "files"
-
-FILES_DIR.mkdir(exist_ok=True)
+os.makedirs('files', exist_ok=True)
 
 gainers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-gainers-nse'
 losers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-losers-nse'
 
+
+# THIS IS TEMPORARY, AS LONG AS IM NOT EXECUTING IN APP.PY
 @views.route('/')
 def home():
     gainers = scraping_of_companies(gainers_url)
     losers = scraping_of_companies(losers_url)
-  
+    
+    save_to_csv(gainers, "files/gainers.csv")
+    save_to_csv(losers, "files/losers.csv")
+    
     return "CSV files updated"
 
 
@@ -104,6 +104,7 @@ def nifty_and_sensex(url):
 
 def save_to_csv(companies, filename):
     with open(filename, 'w', newline='', encoding='utf-8') as file:
+        # 'w' means write/override
         
         writer = csv.DictWriter(
             file,

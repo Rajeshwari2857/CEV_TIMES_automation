@@ -2,6 +2,7 @@ from flask import Flask, render_template
 from POSTS import views
 from LATEST_NEWS import main 
 from pathlib import Path
+import os
 
 app = Flask(__name__)
 
