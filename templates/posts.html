@@ -1,18 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+{% extends "base.html" %}
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-
-
-<body>
+{% block content %}
     <section>
         <title>Market Data</title>
+
         <h1>Market data</h1>
+
         <table border="1">
             <tr>
                 <th>
@@ -56,5 +49,6 @@
                 <p>{{ index.change }}</p>
             {% endfor %}
         </div>
+        
     </section>
-</body>
+{% endblock %}

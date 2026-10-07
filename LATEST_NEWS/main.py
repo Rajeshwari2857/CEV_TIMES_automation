@@ -1,7 +1,6 @@
-import os
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-import requests, time, random, json
+import requests, time, random, json, os
 from google import genai
 from google.genai import types
 
@@ -10,9 +9,10 @@ HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 MAX_RETRIES = 2
 BACKOFF_SECONDS = 3
 OVERLOAD_WAIT_SECONDS = 5
-SELECTION_BACKUP_FILE = 'selected_headlines_backup.json'
-USE_SELECTION_BACKUP = False  
+USE_SELECTION_BACKUP = False
 model = 'gemini-3.1-flash-lite'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 def is_overloaded_error(e):
     """True if the error looks like a 503 / high-demand response."""
@@ -190,10 +190,10 @@ world headline objects). Each object in both arrays must contain exactly
 
 selected_from_backup = None
 
-if USE_SELECTION_BACKUP and os.path.exists(SELECTION_BACKUP_FILE):
-    with open(SELECTION_BACKUP_FILE, 'r') as f:
+if USE_SELECTION_BACKUP and os.path.exists(os.path.join(BASE_DIR, 'data','select_headlines_backup.json')):
+    with open(os.path.join(BASE_DIR, 'data','select_headlines_backup.json'), 'w') as f:
         selected_from_backup = json.load(f)
-    print(f'Loaded headline selection from {SELECTION_BACKUP_FILE} - skipping scrape and selection')
+    print(f'Loaded headline selection from {os.path.join(BASE_DIR, 'data','select_headlines_backup.json')} - skipping scrape and selection')
     business_headlines = None
     world_headlines = None
 
@@ -314,9 +314,9 @@ if selected_from_backup or (business_headlines and world_headlines):
         selected = select_headlines(business_headlines, world_headlines)
         
         if selected:
-            with open(SELECTION_BACKUP_FILE, 'w') as f:
+            with open(os.path.join(BASE_DIR, 'data', 'selected_headlines_backup.json'), 'w') as f:
                 json.dump(selected, f)
-            print(f'Headline selection saved to {SELECTION_BACKUP_FILE}')
+            print(f'Headline selection saved to {os.path.join(BASE_DIR, 'data','select_headlines_backup.json')}')
     
     print('\n--- GEMINI SELECTED HEADLINES ---')
     print(selected)
@@ -337,7 +337,7 @@ if selected_from_backup or (business_headlines and world_headlines):
         international_articles = fetch_selected_articles(international_selected)
         print(f'\nFetched {len(national_articles)} national article(s), {len(international_articles)} international article(s)')
 
-        with open('fetched_articles_backup.json', 'w') as f:
+        with open(os.path.join(BASE_DIR, 'data','fetched_articles_backup.json'), 'w') as f:
             json.dump({
                 'national_articles': national_articles, 
                 'international_articles': international_articles
@@ -360,7 +360,7 @@ else:
 
 
 def retry_summarization_from_backup():
-    with open('fetched_articles_backup.json', 'r') as f:
+    with open(os.path.join(BASE_DIR, 'data','fetched_articles_backup.json'), 'w') as f:
         backup = json.load(f)
         
     bulletin_text = summarize_bulletin(
