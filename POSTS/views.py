@@ -3,25 +3,24 @@ import re, os, requests, csv
 from flask import Flask, render_template, url_for
 from pathlib import Path
 
-views = Flask(__name__)
+views = Flask(__name__, template_folder='../templates')
 
-os.makedirs('files', exist_ok=True)
+BASE_DIR = Path(__file__).resolve().parent
+FILES_DIR = BASE_DIR / "files"
+FILES_DIR.mkdir(exist_ok=True)
+
 
 gainers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-gainers-nse'
 losers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-losers-nse'
 
 
-# THIS IS TEMPORARY, AS LONG AS IM NOT EXECUTING IN APP.PY
+# THIS IS TEMPORARY, ONLY UNTIL IM NOT EXECUTING IN APP.PY
 @views.route('/')
 def home():
-    gainers = scraping_of_companies(gainers_url)
-    losers = scraping_of_companies(losers_url)
+    gainers = read_from_csv(FILES_DIR/ 'gainers.csv')
+    losers = read_from_csv(FILES_DIR/ 'losers.csv')
     
-    save_to_csv(gainers, "files/gainers.csv")
-    save_to_csv(losers, "files/losers.csv")
-    
-    return "CSV files updated"
-
+    return render_template('posts.html', gainers=gainers, losers=losers)
 
 def scraping_of_companies(url):
     
@@ -77,6 +76,29 @@ def scraping_of_companies(url):
     return companies
 
 
+def update_market_data():
+    gainers = scraping_of_companies(gainers_url)
+    losers = scraping_of_companies(losers_url)
+    indices = nifty_and_sensex(gainers_url)
+
+    save_to_csv(gainers, FILES_DIR / "gainers.csv")
+    save_to_csv(losers, FILES_DIR / "losers.csv")
+    
+    return None
+
+
+def read_from_csv(filename):
+    companies = []
+    
+    with open(filename, 'r', newline='', encoding='utf-8') as file:
+        reader = csv.DictReader(file)
+        
+        for row in reader:
+            companies.append(row)
+            
+    return companies
+    
+
 def nifty_and_sensex(url):
     indices = []
     response = requests.get(url, timeout=15)
@@ -88,10 +110,10 @@ def nifty_and_sensex(url):
         value_tag = item.find('span', class_=re.compile(r'^IndicesTicker_web_hl'))
         change_tag = item.find('span', class_=re.compile(r'^IndicesTicker_web_upDnVal'))
         
-    if name_tag and value_tag and change_tag:
-        name = name_tag.get_text(strip=True)
-        value = value_tag.get_text(strip=True)
-        change = change_tag.get_text(strip=True)
+        if name_tag and value_tag and change_tag:
+            name = name_tag.get_text(strip=True)
+            value = value_tag.get_text(strip=True)
+            change = change_tag.get_text(strip=True)
         
     indices.append({
         'name': name,
