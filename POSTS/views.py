@@ -2,12 +2,14 @@ from bs4 import BeautifulSoup
 import re, os, requests, csv
 from flask import Flask, render_template, url_for
 from pathlib import Path
+from datetime import datetime
 
 views = Flask(__name__, template_folder='../templates')
 
 BASE_DIR = Path(__file__).resolve().parent
 FILES_DIR = BASE_DIR / "files"
 FILES_DIR.mkdir(exist_ok=True)
+LAST_UPDATE_FILE = BASE_DIR / "last_update.txt"
 
 
 gainers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-gainers-nse'
@@ -98,7 +100,29 @@ def read_from_csv(filename):
             
     return companies
     
+def check_if_update_needed():
 
+    # Check when the last update happened
+    if LAST_UPDATE_FILE.exists():
+        last_update = datetime.fromisoformat(
+            LAST_UPDATE_FILE.read_text()
+        )
+
+        hours_passed = (datetime.now() - last_update).total_seconds() / 3600
+
+        # 24 hours havent passed, same data stays
+        if hours_passed < 24:
+            exit()
+
+    # 24 hours have passed, or this is the first run
+    update_market_data()
+
+    # Save the current time
+    LAST_UPDATE_FILE.write_text(
+        datetime.now().isoformat()
+    )
+    
+    
 def nifty_and_sensex(url):
     indices = []
     response = requests.get(url, timeout=15)

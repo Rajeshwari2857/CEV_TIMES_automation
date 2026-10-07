@@ -12,10 +12,10 @@ losers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-losers-nse'
 
 @app.route('/posts')
 def home():
-    gainers = views.read_from_csv('files/gainers.csv')
-    losers = views.read_from_csv('files/losers.csv')
+    gainers = views.read_from_csv('POSTS/files/gainers.csv')
+    losers = views.read_from_csv('POSTS/files/losers.csv')
     
-    return render_template('templates/posts.html', gainers=gainers, losers=losers)
+    return render_template('posts.html', gainers=gainers, losers=losers)
 
 
 @app.route('/latest_news')
