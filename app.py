@@ -18,16 +18,25 @@ def home():
     return render_template('posts.html', gainers=gainers, losers=losers)
 
 
+# update button to update manually if someone wishes to
+@app.route('/posts/update-market-data')
+def update_market_data_button():
+    views.update_market_data()
+    
+    gainers = views.read_from_csv('POSTS/files/gainers.csv')
+    losers = views.read_from_csv('POSTS/files/losers.csv')
+    
+    return render_template('posts.html', gainers=gainers, losers=losers)
+
+
 @app.route('/latest_news')
 def latest_news():
-    national_articles = main.get_articles('https://www.moneycontrol.com/news/india/', count=4)
-    world_articles = main.get_articles('https://www.moneycontrol.com/world/', count=4)
-    
-    return render_template(
-        ('templates/dashboard.html'),
-        national_articles=national_articles,
-        world_articles=world_articles
-    )
+    business_headlines = main.get_headline_list('https://www.moneycontrol.com/news/business/')
+    world_headlines = main.get_headline_list('https://www.moneycontrol.com/world/')
+    national_articles = main.fetch_selected_articles(national_selected)
+    international_articles = main.fetch_selected_articles(international_selected)
+    bulletin_text = main.summarize_bulletin(national_articles, international_articles)
+
 
 
 if __name__ == '__main__':
