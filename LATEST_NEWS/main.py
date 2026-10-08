@@ -317,9 +317,6 @@ if selected_from_backup or (business_headlines and world_headlines):
             with open(os.path.join(BASE_DIR, 'data', 'selected_headlines_backup.json'), 'w') as f:
                 json.dump(selected, f)
             print(f'Headline selection saved to {os.path.join(BASE_DIR, 'data','select_headlines_backup.json')}')
-    
-    print('\n--- GEMINI SELECTED HEADLINES ---')
-    print(selected)
 
     if selected is None:
         print('FATAL: Gemini headline selection failed after all retries.')
