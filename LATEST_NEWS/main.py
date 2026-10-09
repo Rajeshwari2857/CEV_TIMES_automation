@@ -282,29 +282,36 @@ def summarize_bulletin(national_articles, international_articles):
 You will be given two JSON lists: "national_articles" and
 "international_articles". Each item has a "headline" and a "body".
 
-For every article in both lists, write a summary of no more than 50 words.
-Never exceed 50 words for any single summary.
+For every article in both lists, write exactly one concise bullet point
+summarising it. Do not include the headline or any title for the article
+anywhere in the output. Each bullet must be self-contained, naming the key
+subject (person, company, country or institution) so it makes sense without
+a headline above it.
+
+The combined length of ALL bullet points across both sections must be 240
+words in total, and must never exceed 240 words. Distribute the words
+according to the content: an article with more substance may take a longer
+bullet and a thinner article a shorter one, so individual bullet lengths
+need not be equal.
 
 Format the ENTIRE output as plain text (not JSON), structured exactly like
 this:
 
 National News
 
-[Headline 1]
-[Summary of 50 words or fewer]
+- [Bullet summary of national article 1]
+- [Bullet summary of national article 2]
 
-[Headline 2]
-[Summary of 50 words or fewer]
-
-(...continue for every national article actually provided - there may be
-anywhere from 2 to 4 of them, do not assume there are always 4)
+(...continue with one bullet for every national article actually provided -
+there may be anywhere from 2 to 4 of them, do not assume there are always 4)
 
 International News
 
-[Headline 1]
-[Summary of 50 words or fewer]
+- [Bullet summary of international article 1]
+- [Bullet summary of international article 2]
 
-(...continue for every international article actually provided)
+(...continue with one bullet for every international article actually
+provided)
 
 Do not add any commentary, introduction, or conclusion outside this
 structure. Do not wrap the output in JSON or markdown code blocks.
