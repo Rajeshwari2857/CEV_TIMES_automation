@@ -10,8 +10,14 @@ MAX_RETRIES = 2
 BACKOFF_SECONDS = 3
 OVERLOAD_WAIT_SECONDS = 5
 USE_SELECTION_BACKUP = False
+WORLD_HEADLINES_TO_SEND = 8
 model = 'gemini-3.1-flash-lite'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+SELECTION_BACKUP_FILE = os.path.join(DATA_DIR, 'selected_headlines_backup.json')
+FETCHED_ARTICLES_BACKUP_FILE = os.path.join(DATA_DIR, 'fetched_articles_backup.json')
+
+os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def is_overloaded_error(e):
@@ -154,17 +160,24 @@ STEP 1 - For the BUSINESS list:
   original "headline" and "url" fields exactly as given.
 
 STEP 2 - For the WORLD list:
-- Look at the headlines in order. Select the first 4 headlines such that no
-  two selected headlines cover the same underlying story or topic.
+- Remove any headline that is completely unrelated to world affairs, such as
+  human-interest or curiosity stories (for example, a story about an unusually
+  old animal). Geopolitical, financial, economic, and other genuine global
+  event news is acceptable and must be kept.
+- From what remains, look at the headlines in order. Select up to 4 headlines
+  such that no two selected headlines cover the same underlying story or topic.
   For example, "Multiple countries probing flydubai pilot..." and
   "flydubai pilot admits he was ready to crash the plane..." are the SAME
   topic (the flydubai incident) - only one of them should be selected, even
-  if it means skipping ahead further down the list to find a 4th unique topic.
+  if it means skipping ahead further down the list to find another unique topic.
+- If fewer than 4 unique, relevant topics exist, select fewer rather than
+  including a duplicate or unrelated headline - but always select at least 2
+  if at all possible.
 - Preserve the original "headline" and "url" fields exactly as given.
 
 Return a single JSON object with exactly two keys:
 "selected_national_headlines" (an array of the chosen business headline
-objects) and "selected_international_headlines" (an array of the 4 chosen
+objects) and "selected_international_headlines" (an array of the chosen
 world headline objects). Each object in both arrays must contain exactly
 "headline" and "url".
 """
@@ -177,7 +190,7 @@ world headline objects). Each object in both arrays must contain exactly
                 'Here is the BUSINESS headlines JSON:', 
                 json.dumps(business_headlines), 
                 'Here is the WORLD headlines JSON:', 
-                json.dumps(world_headlines)
+                json.dumps(world_headlines[:WORLD_HEADLINES_TO_SEND])
                 ], 
             
             config=types.GenerateContentConfig(
@@ -190,10 +203,10 @@ world headline objects). Each object in both arrays must contain exactly
 
 selected_from_backup = None
 
-if USE_SELECTION_BACKUP and os.path.exists(os.path.join(BASE_DIR, 'data','select_headlines_backup.json')):
-    with open(os.path.join(BASE_DIR, 'data','select_headlines_backup.json'), 'w') as f:
+if USE_SELECTION_BACKUP and os.path.exists(SELECTION_BACKUP_FILE):
+    with open(SELECTION_BACKUP_FILE, 'r') as f:
         selected_from_backup = json.load(f)
-    print(f'Loaded headline selection from {os.path.join(BASE_DIR, 'data','select_headlines_backup.json')} - skipping scrape and selection')
+    print(f'Loaded headline selection from {SELECTION_BACKUP_FILE} - skipping scrape and selection')
     business_headlines = None
     world_headlines = None
 
@@ -208,6 +221,10 @@ ROUNDUP_HEADLINE_PATTERNS = [
     'things to know before',
     'before the opening bell',
     'stocks in news',
+    'Q1 results',
+    'Q2 results',
+    'Q3 results',
+    'Q4 results'
 ]
 
 
@@ -215,7 +232,7 @@ def get_two_national_headlines(selected_national_headlines):
     
     def is_roundup(headline):
         lowered = headline['headline'].lower()
-        return any(pattern in lowered for pattern in ROUNDUP_HEADLINE_PATTERNS)
+        return any(pattern.lower() in lowered for pattern in ROUNDUP_HEADLINE_PATTERNS)
 
     usable = [h for h in selected_national_headlines if not is_roundup(h)]
 
@@ -223,7 +240,7 @@ def get_two_national_headlines(selected_national_headlines):
         print('Fewer than 2 non-roundup national headlines available, falling back to include roundup-style ones')
         usable = selected_national_headlines
 
-    return usable[:2]
+    return [h['headline'] for h in usable[:2]]
 
 
 def fetch_selected_articles(headline_entries):
@@ -265,7 +282,8 @@ def summarize_bulletin(national_articles, international_articles):
 You will be given two JSON lists: "national_articles" and
 "international_articles". Each item has a "headline" and a "body".
 
-For every article in both lists, write a summary of 50 to 100 words.
+For every article in both lists, write a summary of no more than 50 words.
+Never exceed 50 words for any single summary.
 
 Format the ENTIRE output as plain text (not JSON), structured exactly like
 this:
@@ -273,10 +291,10 @@ this:
 National News
 
 [Headline 1]
-[50-100 word summary]
+[Summary of 50 words or fewer]
 
 [Headline 2]
-[50-100 word summary]
+[Summary of 50 words or fewer]
 
 (...continue for every national article actually provided - there may be
 anywhere from 2 to 4 of them, do not assume there are always 4)
@@ -284,7 +302,7 @@ anywhere from 2 to 4 of them, do not assume there are always 4)
 International News
 
 [Headline 1]
-[50-100 word summary]
+[Summary of 50 words or fewer]
 
 (...continue for every international article actually provided)
 
@@ -314,9 +332,9 @@ if selected_from_backup or (business_headlines and world_headlines):
         selected = select_headlines(business_headlines, world_headlines)
         
         if selected:
-            with open(os.path.join(BASE_DIR, 'data', 'selected_headlines_backup.json'), 'w') as f:
+            with open(SELECTION_BACKUP_FILE, 'w') as f:
                 json.dump(selected, f)
-            print(f'Headline selection saved to {os.path.join(BASE_DIR, 'data','select_headlines_backup.json')}')
+            print(f'Headline selection saved to {SELECTION_BACKUP_FILE}')
 
     if selected is None:
         print('FATAL: Gemini headline selection failed after all retries.')
@@ -334,7 +352,7 @@ if selected_from_backup or (business_headlines and world_headlines):
         international_articles = fetch_selected_articles(international_selected)
         print(f'\nFetched {len(national_articles)} national article(s), {len(international_articles)} international article(s)')
 
-        with open(os.path.join(BASE_DIR, 'data','fetched_articles_backup.json'), 'w') as f:
+        with open(FETCHED_ARTICLES_BACKUP_FILE, 'w') as f:
             json.dump({
                 'national_articles': national_articles, 
                 'international_articles': international_articles
@@ -357,7 +375,7 @@ else:
 
 
 def retry_summarization_from_backup():
-    with open(os.path.join(BASE_DIR, 'data','fetched_articles_backup.json'), 'w') as f:
+    with open(FETCHED_ARTICLES_BACKUP_FILE, 'r') as f:
         backup = json.load(f)
         
     bulletin_text = summarize_bulletin(
