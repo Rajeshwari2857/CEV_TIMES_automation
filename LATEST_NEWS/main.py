@@ -73,6 +73,10 @@ def fetch_with_retry(url):
             
         except requests.exceptions.RequestException as e:
             print(f'Attempt {attempt}: request failed for {url} -> {e}')
+
+            if getattr(e.response, 'status_code', None) == 403:
+                print(f'GIVING UP: {url} returned 403 Forbidden - the site is refusing this request, so retrying will not help')
+                return None
             
         if attempt <= MAX_RETRIES:
             wait_time = BACKOFF_SECONDS * attempt
