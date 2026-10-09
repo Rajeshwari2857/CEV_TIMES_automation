@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main>
+    <title>Daily news</title>
+
+    <h1>Daily news</h1>  
+
+    <!-- HEADLINES -->
+    <section class="headlines">
+        <h2>Business headlines</h2>
+            {% for headline in business_headlines %}
+            <p>{{ headline }}</p>
+            {% endfor %}
+            
+        <h2>National headlines</h2>
+            {% for headline in two_national_headlines %}
+            <p>{{ headline }}</p>
+            {% endfor %}
+            
+        <h2>World headlines</h2>
+            {% for headline in world_headlines %}
+            <p>{{ headline }}</p>
+            {% endfor %}
+    </section>
+
+    <!-- NEWS -->
+    <section class="international-news">
+        <h2>News</h2>
+            {% for text in bulletin_text %}
+            <p>{{ text }}</p>
+            {% endfor %}
+    </section>
+</main>
+{% endblock %}
