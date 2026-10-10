@@ -19,8 +19,10 @@ SELECTION_BACKUP_FILE = os.path.join(DATA_DIR, 'selected_headlines_backup.json')
 FETCHED_ARTICLES_BACKUP_FILE = os.path.join(DATA_DIR, 'fetched_articles_backup.json')
 
 os.makedirs(DATA_DIR, exist_ok=True)
+load_dotenv()
 
 
+# ERROR HANDLING
 def is_overloaded_error(e):
     """True if the error looks like a 503 / high-demand response."""
     if getattr(e, 'code', None) == 503:
@@ -142,7 +144,6 @@ def get_headline_list(listing_url):
 
 
 def select_headlines(business_headlines, world_headlines):
-    load_dotenv()
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     instructions = """
 You will be given two JSON lists of news headlines, each item containing a
@@ -180,11 +181,10 @@ STEP 2 - For the WORLD list:
   if at all possible.
 - Preserve the original "headline" and "url" fields exactly as given.
 
-Return a single JSON object with exactly two keys:
-"selected_national_headlines" (an array of the chosen business headline
-objects) and "selected_international_headlines" (an array of the chosen
-world headline objects). Each object in both arrays must contain exactly
-"headline" and "url".
+Return a single JSON object with exactly three keys:
+"selected_national_headlines" (an array of the chosen business headline objects), "selected_international_headlines" (an array of the chosen
+world headline objects), and "snapshot_headlines" (an array of exactly 5 strings). Each object in the first two arrays must contain exactly "headline" and "url". Each snapshot headline must be a rewritten one-liner
+of 12 words or fewer, drawn from the selected headlines, mixing national and international stories, with every number taken exactly from the sourceheadline.
 """
 
     def do_call():
@@ -207,17 +207,6 @@ world headline objects). Each object in both arrays must contain exactly
     return call_with_retry(do_call, max_retries=8, backoff_seconds=10)
 
 selected_from_backup = None
-
-if USE_SELECTION_BACKUP and os.path.exists(SELECTION_BACKUP_FILE):
-    with open(SELECTION_BACKUP_FILE, 'r') as f:
-        selected_from_backup = json.load(f)
-    print(f'Loaded headline selection from {SELECTION_BACKUP_FILE} - skipping scrape and selection')
-    business_headlines = None
-    world_headlines = None
-
-else:
-    business_headlines = get_headline_list('https://www.moneycontrol.com/news/business/')
-    world_headlines = get_headline_list('https://www.moneycontrol.com/world/')
 
 ROUNDUP_HEADLINE_PATTERNS = [
     'trade setup',
@@ -245,7 +234,7 @@ def get_two_national_headlines(selected_national_headlines):
         print('Fewer than 2 non-roundup national headlines available, falling back to include roundup-style ones')
         usable = selected_national_headlines
 
-    return [h['headline'] for h in usable[:2]]
+    return usable[:2]
 
 
 def fetch_selected_articles(headline_entries):
@@ -266,12 +255,12 @@ def fetch_selected_articles(headline_entries):
         
         if content_div:
             paragraphs = content_div.find_all('p')
-            body = ' '.join((p.get_text(strip=True) for p in paragraphs))
+            body = ' '.join(p.get_text(strip=True) for p in paragraphs)
             
         else:
             body = ''
             
-        if not body or len(body.strip()) < 200:
+        if len(body.strip()) < 200:
             print(f'Skipping article (no usable content extracted): {headline}')
             continue
         
@@ -281,7 +270,6 @@ def fetch_selected_articles(headline_entries):
 
 
 def summarize_bulletin(national_articles, international_articles):
-    load_dotenv()
     client = genai.Client()
     instructions = """
 You will be given two JSON lists: "national_articles" and
@@ -330,61 +318,101 @@ structure. Do not wrap the output in JSON or markdown code blocks.
                 json.dumps(national_articles), 
                 'Here are the international articles:', 
                 json.dumps(international_articles)
-                ]
-            )
-        
-        return response.text
+            ],
+            config=types.GenerateContentConfig(
+                response_mime_type='application/json'
+            ))
+        return json.loads(response.text)
 
     return call_with_retry(do_call, max_retries=8, backoff_seconds=10)
 
-if selected_from_backup or (business_headlines and world_headlines):
-    if selected_from_backup:
-        selected = selected_from_backup
+
+def generate_daily_news():
+    result = {
+        "business_headlines": [],
+        "two_national_headlines": [],
+        "world_headlines": [],
+        "bulletin": {},
+        "error_message": None
+    }
+
+    # Load saved selection or scrape fresh headlines.
+    if USE_SELECTION_BACKUP and os.path.exists(SELECTION_BACKUP_FILE):
+        with open(SELECTION_BACKUP_FILE, "r", encoding="utf-8") as f:
+            selected = json.load(f)
     else:
+        business_headlines = get_headline_list(
+            "https://www.moneycontrol.com/news/business/"
+        )
+        world_headlines = get_headline_list(
+            "https://www.moneycontrol.com/world/"
+        )
+
+        if not business_headlines or not world_headlines:
+            result["error_message"] = (
+                "Could not fetch headlines. Please try again."
+            )
+            return result
+
         selected = select_headlines(business_headlines, world_headlines)
-        
-        if selected:
-            with open(SELECTION_BACKUP_FILE, 'w') as f:
-                json.dump(selected, f)
-            print(f'Headline selection saved to {SELECTION_BACKUP_FILE}')
 
-    if selected is None:
-        print('FATAL: Gemini headline selection failed after all retries.')
-        exit()
+        if not isinstance(selected, dict):
+            result["error_message"] = (
+                "Could not select headlines. Please try again later."
+            )
+            return result
 
-    if selected:
-        national_selected = selected.get('selected_national_headlines', [])
-        international_selected = selected.get('selected_international_headlines', [])
+        with open(SELECTION_BACKUP_FILE, "w", encoding="utf-8") as f:
+            json.dump(selected, f)
 
-        two_national_headlines = get_two_national_headlines(national_selected)
-        print('\n--- TWO NATIONAL HEADLINES (for frontend) ---')
-        print(two_national_headlines)
+    if not isinstance(selected, dict):
+        result["error_message"] = "Saved headline data is invalid."
+        return result
 
-        national_articles = fetch_selected_articles(national_selected)
-        international_articles = fetch_selected_articles(international_selected)
-        print(f'\nFetched {len(national_articles)} national article(s), {len(international_articles)} international article(s)')
+    national_selected = selected.get("selected_national_headlines", [])
+    international_selected = selected.get(
+        "selected_international_headlines", []
+    )
 
-        with open(FETCHED_ARTICLES_BACKUP_FILE, 'w') as f:
-            json.dump({
-                'national_articles': national_articles, 
-                'international_articles': international_articles
-                }, f)
+    result["business_headlines"] = national_selected
+    result["two_national_headlines"] = get_two_national_headlines(
+        national_selected
+    )
+    result["world_headlines"] = international_selected
 
-        bulletin_text = summarize_bulletin(national_articles, international_articles)
-        
-        if bulletin_text is None:
-            print('Summarization failed, but your fetched articles are saved in fetched_articles_backup.json')
-            print('You can retry just the summarization step without re-scraping.')
-            
-        else:
-            print('\n--- FINAL BULLETIN ---')
-            print(bulletin_text)
-            
+    # Fetch full article text.
+    national_articles = fetch_selected_articles(national_selected)
+    international_articles = fetch_selected_articles(
+        international_selected
+    )
+
+    # Save fetched articles for later summarisation retries.
+    with open(FETCHED_ARTICLES_BACKUP_FILE, "w", encoding="utf-8") as f:
+        json.dump({
+            "national_articles": national_articles,
+            "international_articles": international_articles
+        }, f)
+
+    # Generate the bulletin.
+    bulletin = summarize_bulletin(
+        national_articles, international_articles
+    )
+    
+    print("Bulletin return type:", type(bulletin).__name__)
+    print("Bulletin returned:", repr(bulletin)[:1500])
+
+    if isinstance(bulletin, dict):
+        result["bulletin"] = bulletin
+
+    elif isinstance(bulletin, str) and bulletin.strip():
+        result["bulletin"] = {
+            "Generated Bulletin": bulletin
+        }
     else:
-        print('Skipping article fetch - Gemini selection step failed')
-else:
-    print('Skipping Gemini selection - one or both headline lists failed to scrape')
-
+        result["error_message"] = (
+            "The summaries could not be generated. Please try again."
+        )
+    return result
 
 def retry_summarization_from_backup():
     with open(FETCHED_ARTICLES_BACKUP_FILE, 'r') as f:

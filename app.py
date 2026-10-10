@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from POSTS import views
 from LATEST_NEWS import main 
 from pathlib import Path
@@ -29,26 +29,20 @@ def update_market_data_button():
     return render_template('posts.html', gainers=gainers, losers=losers)
 
 
-@app.route('/latest_news')
+@app.route('/latest-news', methods=['GET', 'POST'])
 def latest_news():
-    business_headlines = main.get_headline_list('https://www.moneycontrol.com/news/business/')
-    world_headlines = main.get_headline_list('https://www.moneycontrol.com/world/')
-    
-    national_selected = main.selected.get('selected_national_headlines', [])
-    international_selected = main.selected.get('selected_international_headlines', [])
-    
-    two_national_headlines = main.get_two_national_headlines(national_selected)
-    national_articles = main.fetch_selected_articles(national_selected)
-    international_articles = main.fetch_selected_articles(international_selected)
-    bulletin_text = main.summarize_bulletin(national_articles, international_articles)
-    
-    return render_template(
-        'latest_news.html', 
-        business_headlines=business_headlines,
-        world_headlines=world_headlines,
-        two_national_headlines=two_national_headlines, 
-        bulletin_text=bulletin_text,
-        )
+    data = {
+        "business_headlines": [],
+        "two_national_headlines": [],
+        "world_headlines": [],
+        "bulletin": {},
+        "error_message": None
+    }
+
+    if request.method == 'POST':
+        data = main.generate_daily_news()
+
+    return render_template("latest_news.html", **data)
 
 
 if __name__ == '__main__':
