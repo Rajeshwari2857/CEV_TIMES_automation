@@ -14,6 +14,7 @@ WORLD_HEADLINES_TO_SEND = 8
 model = 'gemini-3.1-flash-lite'
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
 SELECTION_BACKUP_FILE = os.path.join(DATA_DIR, 'selected_headlines_backup.json')
 FETCHED_ARTICLES_BACKUP_FILE = os.path.join(DATA_DIR, 'fetched_articles_backup.json')
 
