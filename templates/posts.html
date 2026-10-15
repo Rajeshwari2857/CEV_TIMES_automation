@@ -1,58 +1,37 @@
-{% extends "base.html" %}
+{# Context: date, indices[{name,value,change}], gainers/losers[{name,price,change}], headlines, byte
+   Tolerant of scraped strings: "1,763.70", "+ 60.45 ( 10.65% )", "-3.08 ( -14.53% )", plain floats. #}
 
-{% block content %}
-    <section>
-        <title>Market Data</title>
+{% macro clean(x) %}{{ x|string|replace(',','')|replace('+','')|replace('-','')|replace('−','')|replace('%','')|trim }}{% endmacro %}
 
-        <h1>Market data</h1>
-        
-        <a href="{{ url_for('update_market_data_button') }}">Update</a>
-        <table border="1">
-            <tr>
-                <th>
-                    <td>Gainers</td>
-                    <td>Price</td>
-                    <td>Price change</td>
-                </th>
-            </tr>
+{# 12,345.67 style, sign dropped #}
+{% macro fmt(x) %}{{ '{:,.2f}'.format(clean(x)|float) }}{% endmacro %}
 
-            {% for company in gainers %}
-            <tr>
-                <td>{{ company.name }}</td>
-                <td>{{ company.price }}</td>
-                <td>{{ company.change }}</td>
-            </tr>
-            {% endfor %}
-        </table>
+{# "points|percent", unsigned. Takes the % from the string if present, else computes it from price. #}
+{% macro split(change, price, up) -%}
+  {%- set parts = (change|string|replace(')','')).split('(') -%}
+  {%- set c = clean(parts[0])|float -%}
+  {%- if parts|length > 1 -%}
+    {%- set p = clean(parts[1])|float -%}
+  {%- else -%}
+    {%- set pr = clean(price)|float -%}
+    {%- set prev = (pr - c) if up else (pr + c) -%}
+    {%- set p = (c / prev * 100) if prev else 0 -%}
+  {%- endif -%}
+  {{ '{:,.2f}'.format(c) }}|{{ '{:.2f}'.format(p) }}
+{%- endmacro %}
 
-        <table border="1">
-            <tr>
-                <th>
-                    <td>Losers</td>
-                    <td>Price</td>
-                    <td>Price change</td>
-                </th>
-            </tr>
+{% macro movers(items, up) %}
+  {% for co in items[:5] %}
+  {% set sp = split(co.change, co.price, up)|trim %}
+  <div class="row">
+    <i class="num">{{ loop.index }}</i>
+    <span class="name">{{ co.name }}</span>
+    <span class="price">{{ fmt(co.price) }}</span>
+    <span class="delta">{{ '+' if up else '−' }}{{ sp.split('|')[0] }}<small>({{ '+' if up else '−' }}{{ sp.split('|')[1] }}%)</small></span>
+  </div>
+  {% endfor %}
+{% endmacro %}
 
-            {% for company in losers %}
-            <tr>
-                <td>{{ company.name }}</td>
-                <td>{{ company.price }}</td>
-                <td>{{ company.change }}</td>
-            </tr>
-            {% endfor %}
-        </table>
-
-        <div>
-            {% for index in indices %}
-                <p>{{ index.name }}</p>
-                <p>{{ index.value }}</p>
-                <p>{{ index.change }}</p>
-            {% endfor %}
-        </div>
-        
-    </section>
-{% endblock %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -60,92 +39,74 @@
 <title>CEV Times - Daily Market Snapshot</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@900&family=Oswald:wght@400;500;600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 
+<a class="admin" href="{{ url_for('update_market_data_button') }}">Update</a>
+
 <main class="poster" id="poster">
 
-  <!-- MASTHEAD (mostly static) -->
+  <!-- MASTHEAD (static) -->
   <header class="masthead">
-    <div class="mast-art"><!-- <img src="newspaper.png" alt=""> -->NEWSPAPER<br>ICON / IMAGE</div>
+    <div class="mast-art"><!-- <img src="{{ url_for('static', filename='newspaper.png') }}" alt=""> -->NEWSPAPER<br>ICON / IMAGE</div>
     <div class="mast-title">
       <h1>CEV TIMES</h1>
       <p class="tagline">Your daily dose of markets,<br>finance &amp; financial literacy</p>
     </div>
     <div class="logo">
-      <div class="logo-circle"><!-- <img src="logo.png" alt=""> -->CEV<br>TIMES</div>
+      <div class="logo-circle"><!-- <img src="{{ url_for('static', filename='logo.png') }}" alt=""> -->CEV<br>TIMES</div>
       <small>LEARN • DISCUSS • GROW</small>
     </div>
   </header>
 
   <!-- DATE BAR -->
   <div class="datebar">
-    <div class="date">📅 <span data-field="date">[DD MONTH YYYY]</span></div>
+    <div class="date">📅 {{ date }}</div>
     <div class="label">Daily Market Snapshot</div>
   </div>
 
-  <!-- MARKET UPDATE
-       Add class "down" to .index when the index is negative (turns it red). Change ▲ to ▼ too. -->
+  <!-- MARKET UPDATE: one block per index; "down" class and arrow flip automatically -->
   <section class="box market">
     <div class="pill">Market Update</div>
-
-    <div class="index"><!-- add "down" here if negative -->
-      <div class="ring">📈</div>
+    {% for index in indices[:2] %}
+      {% set up = not ('-' in index.change|string or '−' in index.change|string) %}
+      {% set sp = split(index.change, index.value, up)|trim %}
+    <div class="index{{ '' if up else ' down' }}">
+      <div class="ring">{{ '📈' if loop.first else '🏢' }}</div>
       <div>
-        <h3>Nifty 50</h3>
-        <div class="value" data-field="nifty-value">[00,000.00]</div>
-        <div class="change">▲ <span data-field="nifty-points">[00.00]</span> (<span data-field="nifty-pct">[+0.00%]</span>)</div>
+        <h3>{{ index.name }}</h3>
+        <div class="value">{{ fmt(index.value) }}</div>
+        <div class="change">{{ '▲' if up else '▼' }} {{ sp.split('|')[0] }} ({{ '+' if up else '−' }}{{ sp.split('|')[1] }}%)</div>
       </div>
     </div>
-
-    <div class="index"><!-- add "down" here if negative -->
-      <div class="ring">🏢</div>
-      <div>
-        <h3>Sensex</h3>
-        <div class="value" data-field="sensex-value">[00,000.00]</div>
-        <div class="change">▲ <span data-field="sensex-points">[00.00]</span> (<span data-field="sensex-pct">[+0.00%]</span>)</div>
-      </div>
-    </div>
+    {% endfor %}
   </section>
 
   <!-- GAINERS & LOSERS -->
   <section class="movers">
-
     <div class="box panel up">
       <div class="panel-title"><span><i class="badge">↗</i> Top Gainers</span></div>
-      <div class="row"><i class="num">1</i><span data-field="g1-name">[Stock]</span><span class="price" data-field="g1-price">[0,000.00]</span><span class="delta">+<span data-field="g1-chg">[00.00]</span><small>(+<span data-field="g1-pct">[0.00%]</span>)</small></span></div>
-      <div class="row"><i class="num">2</i><span data-field="g2-name">[Stock]</span><span class="price" data-field="g2-price">[0,000.00]</span><span class="delta">+<span data-field="g2-chg">[00.00]</span><small>(+<span data-field="g2-pct">[0.00%]</span>)</small></span></div>
-      <div class="row"><i class="num">3</i><span data-field="g3-name">[Stock]</span><span class="price" data-field="g3-price">[0,000.00]</span><span class="delta">+<span data-field="g3-chg">[00.00]</span><small>(+<span data-field="g3-pct">[0.00%]</span>)</small></span></div>
-      <div class="row"><i class="num">4</i><span data-field="g4-name">[Stock]</span><span class="price" data-field="g4-price">[0,000.00]</span><span class="delta">+<span data-field="g4-chg">[00.00]</span><small>(+<span data-field="g4-pct">[0.00%]</span>)</small></span></div>
-      <div class="row"><i class="num">5</i><span data-field="g5-name">[Stock]</span><span class="price" data-field="g5-price">[0,000.00]</span><span class="delta">+<span data-field="g5-chg">[00.00]</span><small>(+<span data-field="g5-pct">[0.00%]</span>)</small></span></div>
+      {{ movers(gainers, true) }}
     </div>
-
     <div class="box panel dn">
       <div class="panel-title"><span><i class="badge">↘</i> Top Losers</span></div>
-      <div class="row"><i class="num">1</i><span data-field="l1-name">[Stock]</span><span class="price" data-field="l1-price">[0,000.00]</span><span class="delta">−<span data-field="l1-chg">[00.00]</span><small>(−<span data-field="l1-pct">[0.00%]</span>)</small></span></div>
-      <div class="row"><i class="num">2</i><span data-field="l2-name">[Stock]</span><span class="price" data-field="l2-price">[0,000.00]</span><span class="delta">−<span data-field="l2-chg">[00.00]</span><small>(−<span data-field="l2-pct">[0.00%]</span>)</small></span></div>
-      <div class="row"><i class="num">3</i><span data-field="l3-name">[Stock]</span><span class="price" data-field="l3-price">[0,000.00]</span><span class="delta">−<span data-field="l3-chg">[00.00]</span><small>(−<span data-field="l3-pct">[0.00%]</span>)</small></span></div>
-      <div class="row"><i class="num">4</i><span data-field="l4-name">[Stock]</span><span class="price" data-field="l4-price">[0,000.00]</span><span class="delta">−<span data-field="l4-chg">[00.00]</span><small>(−<span data-field="l4-pct">[0.00%]</span>)</small></span></div>
-      <div class="row"><i class="num">5</i><span data-field="l5-name">[Stock]</span><span class="price" data-field="l5-price">[0,000.00]</span><span class="delta">−<span data-field="l5-chg">[00.00]</span><small>(−<span data-field="l5-pct">[0.00%]</span>)</small></span></div>
+      {{ movers(losers, false) }}
     </div>
-
   </section>
 
   <!-- HEADLINES -->
   <section class="box headlines">
-    <div class="slot"><!-- <img src="news-icon.png" alt=""> -->NEWS ICON</div>
+    <div class="slot"><!-- <img src="{{ url_for('static', filename='news-icon.png') }}" alt=""> -->NEWS ICON</div>
     <div class="copy">
       <h2>Headlines</h2>
       <ul>
-        <li data-field="headline-1">[Headline 1]</li>
-        <li data-field="headline-2">[Headline 2]</li>
-        <li data-field="headline-3">[Headline 3]</li>
-        <li data-field="headline-4">[Headline 4]</li>
-        <li data-field="headline-5">[Headline 5]</li>
+        {% for h in (headlines or [])[:5] %}
+        <li>{{ h }}</li>
+        {% endfor %}
       </ul>
     </div>
-    <div class="slot"><!-- <img src="bull.png" alt=""> -->BULL / MARKET<br>ILLUSTRATION</div>
+    <div class="slot"><!-- <img src="{{ url_for('static', filename='bull.png') }}" alt=""> -->BULL / MARKET<br>ILLUSTRATION</div>
   </section>
 
   <!-- FINANCE BYTE -->
@@ -153,23 +114,23 @@
     <div class="book">📖</div>
     <div class="copy">
       <h2>Finance Byte</h2>
-      <h3 data-field="byte-term">[Term]</h3>
-      <p data-field="byte-definition">[One or two line definition of the term.]</p>
+      {% if byte %}
+      <h3>{{ byte.term }}</h3>
+      <p>{{ byte.definition }}</p>
       <div class="kp">Key Points:</div>
       <ul>
-        <li data-field="byte-point-1">[Key point 1]</li>
-        <li data-field="byte-point-2">[Key point 2]</li>
-        <li data-field="byte-point-3">[Key point 3]</li>
-        <li data-field="byte-point-4">[Key point 4]</li>
+        {% for p in byte.points[:4] %}
+        <li>{{ p }}</li>
+        {% endfor %}
       </ul>
+      {% endif %}
     </div>
-    <div class="slot"><!-- <img src="byte-art.png" alt=""> -->TOPIC<br>ILLUSTRATION</div>
+    <div class="slot"><!-- <img src="{{ url_for('static', filename='byte-art.png') }}" alt=""> -->TOPIC<br>ILLUSTRATION</div>
   </section>
 
-  <!-- FOOTER -->
+  <!-- FOOTER (static) -->
   <footer class="footer">
     <span class="line"></span>
-    <span class="social">💬 📷 f</span>
     <div class="center">Stay informed. Stay ahead.<b>CEV Times</b></div>
     <span class="motto">Learn • Discuss • Grow</span>
     <span class="line"></span>

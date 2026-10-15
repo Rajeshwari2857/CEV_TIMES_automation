@@ -2,7 +2,7 @@ from flask import Flask, render_template, request
 from POSTS import views
 from LATEST_NEWS import main 
 from pathlib import Path
-import os
+import os, datetime
 
 app = Flask(__name__)
 
@@ -14,8 +14,11 @@ losers_url = 'https://www.moneycontrol.com/stocks/market-stats/top-losers-nse'
 def home():
     gainers = views.read_from_csv('POSTS/files/gainers.csv')
     losers = views.read_from_csv('POSTS/files/losers.csv')
+    date = datetime.date.today().strftime("%d %B %Y")
+    indices = views.nifty_and_sensex(gainers_url)
+   
     
-    return render_template('posts.html', gainers=gainers, losers=losers)
+    return render_template('posts.html', gainers=gainers, losers=losers, date=date, indices=indices)
 
 
 # update button to update manually if someone wishes to
