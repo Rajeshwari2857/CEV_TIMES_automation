@@ -51,8 +51,6 @@
   <header class="masthead">
     <div class="mast-art">
       <img src="{{ url_for('static', filename='Daily_News_Stack.png') }}" alt="">
-      NEWSPAPER
-      <br>ICON / IMAGE
     </div> 
     <div class="mast-title">
       <h1>CEV TIMES</h1>
@@ -78,12 +76,12 @@
     <div class="pill">Market Update</div>
     {% for index in indices[:2] %}
       {% set up = not ('-' in index.change|string or '−' in index.change|string) %}
-      {% set sp = split(index.change, index.value, up)|trim %}
+      {% set sp = split(index.change, index.price, up)|trim %}
     <div class="index{{ '' if up else ' down' }}">
       <div class="ring">{{ '📈' if loop.first else '🏢' }}</div>
       <div>
         <h3>{{ index.name }}</h3>
-        <div class="value">{{ fmt(index.value) }}</div>
+        <div class="value">{{ fmt(index.price) }}</div>
         <div class="change">{{ '▲' if up else '▼' }} {{ sp.split('|')[0] }} ({{ '+' if up else '−' }}{{ sp.split('|')[1] }}%)</div>
       </div>
     </div>
@@ -105,7 +103,6 @@
   <!-- HEADLINES -->
   <section class="box headlines">
      <div class="slot"><img src="{{ url_for('static', filename='Newspaper.png') }}" alt="">
-      NEWS ICON
     </div> 
     <div class="copy">
       <h2>Headlines</h2>
@@ -117,7 +114,6 @@
     </div>
     <div class="slot">
       <img src="{{ url_for('static', filename='Bull.png') }}" alt="">
-      BULL / MARKET<br>ILLUSTRATION
     </div>
   </section>
 

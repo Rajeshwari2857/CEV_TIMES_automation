@@ -1,8 +1,8 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for
 from POSTS import views
 from LATEST_NEWS import main 
 from pathlib import Path
-import os, datetime
+import os, datetime, json
 
 app = Flask(__name__)
 
@@ -25,11 +25,7 @@ def home():
 @app.route('/posts/update-market-data')
 def update_market_data_button():
     views.update_market_data()
-    
-    gainers = views.read_from_csv('POSTS/files/gainers.csv')
-    losers = views.read_from_csv('POSTS/files/losers.csv')
-    
-    return render_template('posts.html', gainers=gainers, losers=losers)
+    return redirect(url_for('home'))
 
 
 @app.route('/latest-news', methods=['GET', 'POST'])

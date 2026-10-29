@@ -30,9 +30,11 @@ def scraping_of_companies(url):
 
     try:
         # html content stored in companies
-        response = requests.get(url, timeout=15) #wait till 15 seconds for the server to respond, then raise a TIMEOUT exception, if it doesnt respond
+        response = requests.get(url, timeout=15)
+        #wait till 15 seconds for the server to respond, then raise a TIMEOUT exception, if it doesnt respond
         
-        response.raise_for_status() #checks the status code and prevents the scraper from parsing an error page as if it were data 
+        response.raise_for_status() 
+        #checks the status code and prevents the scraper from parsing an error page as if it were data 
         
         soup = BeautifulSoup(response.content, 'lxml')
         # companies.content -> raw bytes 
@@ -59,7 +61,8 @@ def scraping_of_companies(url):
 
             if name_tag and price_tag:
                 name = name_tag.get_text(strip=True)
-                price = price_tag.find(string=True, recursive=False).strip() # Extract only the direct text, excluding nested daily change
+                price = price_tag.find(string=True, recursive=False).strip() 
+                # Extract only the direct text, excluding nested daily change
                 price_change = price_change_tag.get_text(' ', strip=True)
 
                 companies.append({
@@ -85,6 +88,7 @@ def update_market_data():
 
     save_to_csv(gainers, FILES_DIR / "gainers.csv")
     save_to_csv(losers, FILES_DIR / "losers.csv")
+    save_to_csv(indices, FILES_DIR / "indices.csv")
     
     return None
 
@@ -125,25 +129,44 @@ def check_if_update_needed():
     
 def nifty_and_sensex(url):
     indices = []
-    response = requests.get(url, timeout=15)
-    soup = BeautifulSoup(response.content, 'lxml')
-    items= soup.find_all('div', class_=re.compile(r'^IndicesTicker_web_flexItm'))
-    
-    for item in items:
-        name_tag = item.find('span')
-        value_tag = item.find('span', class_=re.compile(r'^IndicesTicker_web_hl'))
-        change_tag = item.find('span', class_=re.compile(r'^IndicesTicker_web_upDnVal'))
+
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+                
+        print("Status:", response.status_code)
+        print("URL:", response.url)
         
-        if name_tag and value_tag and change_tag:
-            name = name_tag.get_text(strip=True)
-            value = value_tag.get_text(strip=True)
-            change = change_tag.get_text(strip=True)
+        soup = BeautifulSoup(response.content, 'lxml')
+        items = soup.find_all('div', class_=re.compile(r'^IndicesTicker_web_flexItm'))
         
-    indices.append({
-        'name': name,
-        'value': value,
-        'change': change,
-    })
+        print("Matched items:", len(items))
+
+        for item in items:
+            name_tag = item.find("span")
+            price_tag = item.find(
+                "span",
+                class_=re.compile(r"^IndicesTicker_web_hl")
+            )
+            change_tag = item.find(
+                "span",
+                class_=re.compile(r"^IndicesTicker_web_upDnVal")
+            )
+
+            if name_tag and price_tag and change_tag:
+                indices.append({
+                    "name": name_tag.get_text(strip=True),
+                    "price": price_tag.get_text(strip=True),
+                    "change": change_tag.get_text(" ", strip=True),
+                })
+
+    # handles request related exceptions such as HTTP errors, connection failures or timeout
+    except requests.RequestException as e:
+        print("Request failed:", e)
+
+    # handles any other exceptions
+    except Exception as e:
+        print("Indices scrape failed:", e)
 
     return indices
 
