@@ -49,13 +49,20 @@
 
   <!-- MASTHEAD (static) -->
   <header class="masthead">
-    <div class="mast-art"><!-- <img src="{{ url_for('static', filename='newspaper.png') }}" alt=""> -->NEWSPAPER<br>ICON / IMAGE</div>
+    <div class="mast-art">
+      <img src="{{ url_for('static', filename='Daily_News_Stack.png') }}" alt="">
+      NEWSPAPER
+      <br>ICON / IMAGE
+    </div> 
     <div class="mast-title">
       <h1>CEV TIMES</h1>
       <p class="tagline">Your daily dose of markets,<br>finance &amp; financial literacy</p>
     </div>
     <div class="logo">
-      <div class="logo-circle"><!-- <img src="{{ url_for('static', filename='logo.png') }}" alt=""> -->CEV<br>TIMES</div>
+      <div class="logo-circle">
+        <!-- <img src="{{ url_for('static', filename='logo.png') }}" alt=""> -->
+        CEV<br>TIMES
+      </div>
       <small>LEARN • DISCUSS • GROW</small>
     </div>
   </header>
@@ -97,7 +104,9 @@
 
   <!-- HEADLINES -->
   <section class="box headlines">
-    <div class="slot"><!-- <img src="{{ url_for('static', filename='news-icon.png') }}" alt=""> -->NEWS ICON</div>
+     <div class="slot"><img src="{{ url_for('static', filename='Newspaper.png') }}" alt="">
+      NEWS ICON
+    </div> 
     <div class="copy">
       <h2>Headlines</h2>
       <ul>
@@ -106,12 +115,17 @@
         {% endfor %}
       </ul>
     </div>
-    <div class="slot"><!-- <img src="{{ url_for('static', filename='bull.png') }}" alt=""> -->BULL / MARKET<br>ILLUSTRATION</div>
+    <div class="slot">
+      <img src="{{ url_for('static', filename='Bull.png') }}" alt="">
+      BULL / MARKET<br>ILLUSTRATION
+    </div>
   </section>
 
   <!-- FINANCE BYTE -->
   <section class="box byte">
-    <div class="book">📖</div>
+    <div class="">
+      <img src="{{ url_for('static', filename='Open_book.png') }}" alt="">
+    </div>
     <div class="copy">
       <h2>Finance Byte</h2>
       {% if byte %}
@@ -125,7 +139,10 @@
       </ul>
       {% endif %}
     </div>
-    <div class="slot"><!-- <img src="{{ url_for('static', filename='byte-art.png') }}" alt=""> -->TOPIC<br>ILLUSTRATION</div>
+    <div class="slot">
+      <!-- <img src="{{ url_for('static', filename='byte-art.png') }}" alt=""> -->
+        TOPIC<br>ILLUSTRATION
+    </div>
   </section>
 
   <!-- FOOTER (static) -->
